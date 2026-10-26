@@ -293,11 +293,30 @@ node tools/verify_direct.js <商品ID>
 git checkout -b feature/xxx
 # 改动后跑自检
 node tools/selftest.js && node tools/test_matching.js
-git commit -am "feat: xxx"
-git push origin feature/xxx
+git add -A && git commit -m "feat: xxx"
+node tools/gh_publish.js --push     # 推送到 GitHub
 ```
 
 细节见 [CONTRIBUTING.md](CONTRIBUTING.md)。遇到平台改版时的排查顺序也写在里面。
+
+### 推送到 GitHub
+
+```bash
+node tools/gh_publish.js            # 首次：引导登录 + 建仓 + 生成 Token + 推送
+node tools/gh_publish.js --push     # 后续：只推送（复用已存的 Token）
+```
+
+**这里有几个不直观的坑，脚本已经处理好了：**
+
+| 坑 | 现象 | 解法 |
+|---|---|---|
+| WorkBuddy 的 GitHub 连接器 | 只读权限，`create_repository` / `push_files` 全部 403 | 改走浏览器 + PAT |
+| WARP 代理 IP | 建仓被拒，报 "sanctioned region" | 建仓/建 Token **必须直连**（`--no-proxy-server`），住宅 IP 才不被拦 |
+| git over HTTPS | 直连 "Connection was reset"，走代理挂起 | 改用 REST API（Git Data API）推送，走 HTTPS 稳定 |
+| 浏览器会话 Cookie | `api.github.com` 返回 401 | GitHub API 只认 PAT，不认 Cookie |
+| 空仓库 | 创建 blob 报 "Git Repository is empty" | 先用 Contents API 建个初始提交，再推全量 |
+
+Token 存在 `~/.git-credentials`（权限 600），不会被提交进仓库。
 
 ## 已知限制
 
