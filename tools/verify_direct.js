@@ -1,0 +1,20 @@
+const { launch, sleep, shot } = require('../src/lib');
+const id = process.argv[2] || '1094008366209';
+(async () => {
+  const ctx = await launch('fish', { headless: true });
+  const p = ctx.pages()[0] || (await ctx.newPage());
+  await p.setViewportSize({ width: 1400, height: 900 });
+  await p.goto(`https://www.goofish.com/item?id=${id}`, { waitUntil: 'domcontentloaded' });
+  await sleep(7000);
+  const body = ((await p.textContent('body').catch(()=>''))||'').replace(/\s+/g,' ');
+  console.log('URL:', p.url());
+  console.log('含标题「姜胡说」:', /姜胡说/.test(body) ? '✓ 是' : '否');
+  const price = body.match(/¥\s*([\d.]+)/);
+  console.log('价格:', price ? '¥' + price[1] : '未找到');
+  const idx = body.indexOf('姜胡说');
+  if (idx >= 0) console.log('片段:', body.slice(Math.max(0,idx-60), idx+200));
+  const st = body.match(/(在售|已售出|已下架|审核中|审核未通过|交易关闭)/);
+  console.log('状态:', st ? st[1] : '未识别');
+  await shot(p, 'verify_direct');
+  await ctx.close();
+})();
