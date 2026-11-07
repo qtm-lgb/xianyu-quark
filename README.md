@@ -326,3 +326,32 @@ Token 存在 `~/.git-credentials`（权限 600），不会被提交进仓库。
   「夸克网盘 课程」大多返回无关推文
 - `auto_reply.js` 需要常驻运行才能无人值守；关掉进程就停止自动发货
 - 批量上架节奏已放慢到每条间隔 10 秒，仍建议单批不超过 30 条，避免触发风控
+
+---
+
+# 附：Ydisks 助手方案（推荐）
+
+自建的 Playwright 脚本（`src/auto_reply.js`）与 Ydisks 闲鱼助手功能重叠。
+**Ydisks 是闭源软件，但它的 WebSocket 长连接比网页轮询稳定得多**，
+而且原生支持「付款自动发货 + 卡密管理 + 自动客服规则」。
+
+本机已安装并配置完成，详见 **[docs/ydisks-guide.md](docs/ydisks-guide.md)**。
+
+```bash
+node tools/yd_session.js              # 取控制台会话
+node tools/yd_configure.js            # 配置自动发货 + 自动客服
+node tools/yd_reply_pending.js        # 补发历史未回复咨询
+```
+
+两套方案的分工建议：
+
+| | Ydisks 助手 | 自建脚本 (src/) |
+|---|---|---|
+| 消息监听 | WebSocket 长连接，实时 | 轮询网页，延迟高 |
+| 自动发货 | 原生卡密管理，支持多规格 | 需自行维护链接与提取码 |
+| 自动客服 | 关键词规则 + 默认回复兜底 | 关键词判定 + 商品匹配 |
+| 上架商品 | 支持批量发布 | `src/publish_xianyu.js` 已跑通 |
+| 稳定性 | 依赖第三方，升级可能改 API | 自主可控，但易被平台改版打断 |
+
+**建议以 Ydisks 为主**（监听与发货），自建脚本作为补充
+（`src/` 负责采集货源与上架）。
