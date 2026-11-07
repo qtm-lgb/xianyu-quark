@@ -168,6 +168,77 @@ async function setNoShipping(page) {
   return false;
 }
 
+/** 选择商品分类
+ *  分类控件是懒渲染的（填完标题后才出现），Ant Design Select 结构。
+ *  不选分类时闲鱼会拦截发布：「网页版暂不支持发布此分类」。
+ *
+ *  实测（2026-11）：
+ *  - 页面上共 2 个 .ant-select-selector：
+ *      [0] = 分类（y≈600）    [1] = 出版国家/地区
+ *  - 分类候选随标题动态变化，只有「电子资料」这类是网页版支持的；
+ *    「AI视频工具/服务」「AI设计工具/服务」等只能 APP 发布，选了会被拦截。
+ *  - 填完标题后闲鱼会自动预选一个分类，但可能是 APP-only 的，
+ *    所以必须显式改成「电子资料」。
+ */
+async function selectCategory(page, name = '电子资料') {
+  // 等分类控件渲染
+  for (let i = 0; i < 12; i++) {
+    const n = await page.locator('.ant-select-selector').count().catch(() => 0);
+    if (n > 0) break;
+    await sleep(1000);
+  }
+
+  // 分类是第 0 个 select（按 y 排序也稳定在「出版国家/地区」之前）
+  const idx = await page.evaluate(() => {
+    const sels = [...document.querySelectorAll('.ant-select-selector')];
+    if (!sels.length) return -1;
+    // 用「出版国家/地区」作为参照排除掉它，取剩下的第一个
+    let other = -1;
+    sels.forEach((s, i) => {
+      if (/出版国家|国家\/地区/.test(s.innerText || '')) other = i;
+    });
+    if (other === 0) return 1;
+    return 0;
+  }).catch(() => 0);
+
+  const sel = page.locator('.ant-select-selector').nth(idx >= 0 ? idx : 0);
+  if ((await sel.count().catch(() => 0)) === 0) {
+    log('warn', '未找到分类下拉控件');
+    return false;
+  }
+
+  // 已选中目标分类就不用动
+  const current = ((await sel.textContent().catch(() => '')) || '').trim();
+  if (current.includes(name)) {
+    log('ok', `分类已是「${name}」`);
+    return true;
+  }
+
+  await sel.click({ force: true }).catch(() => {});
+  await sleep(1800);
+
+  const opt = page.locator(`.ant-select-item-option[title="${name}"], [role="option"]:has-text("${name}")`).first();
+  if ((await opt.count().catch(() => 0)) === 0) {
+    const all = await page.evaluate(() =>
+      [...document.querySelectorAll('.ant-select-item-option, [role="option"]')]
+        .map((el) => (el.innerText || '').trim())
+        .filter(Boolean)
+    );
+    log('warn', `分类候选无「${name}」（闲鱼按标题推荐，可能只能 APP 发布）: ${all.slice(0, 6).join('/')}`);
+    await page.keyboard.press('Escape').catch(() => {});
+    await sleep(600);
+    return false;
+  }
+  await opt.click({ force: true }).catch(() => {});
+  await sleep(1200);
+
+  // 校验：重新读回该 select 的值
+  const picked = ((await sel.textContent().catch(() => '')) || '').trim();
+  const ok = picked.includes(name);
+  log(ok ? 'ok' : 'warn', ok ? `分类已选「${name}」` : `分类选择未确认（当前=${picked}）`);
+  return ok;
+}
+
 /** 校验表单填写情况 */
 async function readFormState(page) {
   return page.evaluate(() => {
@@ -208,6 +279,10 @@ async function publishOne(page, item, { dryRun = false } = {}) {
   // 描述首行=标题，正文紧随
   const d = await fillDesc(page, item.xyTitle, item.description);
   log(d ? 'ok' : 'warn', `描述${d ? '已填' : '未找到输入框'}`);
+
+  // 分类（懒渲染，必须在标题填完后再选；不选会被闲鱼拦截发布）
+  const cat = await selectCategory(page, '电子资料');
+  log(cat ? 'ok' : 'warn', `分类${cat ? '已选「电子资料」' : '未手动选择（按标题自动归类）'}`);
 
   const pr = await fillPrice(page, item.price);
   log(pr ? 'ok' : 'warn', `价格${pr ? '已填' : '未找到输入框'}: ${item.price}`);
@@ -256,11 +331,43 @@ async function publishOne(page, item, { dryRun = false } = {}) {
   await sleep(7000);
   await shot(page, `publish_${item.slug}_done`);
   const after = ((await page.textContent('body').catch(() => '')) || '');
-  // 闲鱼发布成功的提示文案有多种：发布成功 / 审核通过立即可见 / 宝贝发布成功 等
-  const published =
-    /发布成功|已发布|发布完成|审核中|审核通过|宝贝发布成功|发布宝贝|您的宝贝|立即可见/.test(after);
-  log(published ? 'ok' : 'warn', published ? '发布成功' : '点击后未检测到成功提示，请核对截图');
-  return { ok: published, url: page.url() };
+  // 成功判定（闲鱼有多种提示形态）：
+  //   1) 顶部横幅「闲鱼发布成功物品及并推荐！」
+  //   2) 跳转后 URL 变成 /item?id=xxx
+  //   3) 页面上出现「已发布/审核通过/立即可见」等字样
+  //   4) 按钮从「发布」变成「下架/删除」（说明已进入自己商品的管理态）
+  const byBanner = /发布成功/.test(after);
+  const byUrl = /\/item\?id=\d+/.test(page.url());
+  const byText = /已发布|审核通过|立即可见|宝贝发布成功/.test(after);
+  const byManage = /下架/.test(after) && /删除/.test(after);
+  const published = byBanner || byUrl || byText || byManage;
+  log(
+    published ? 'ok' : 'warn',
+    published
+      ? `发布成功${byBanner ? '（横幅）' : byUrl ? '（URL）' : byText ? '（文案）' : '（管理态）'}`
+      : '点击后未检测到成功提示，请核对截图'
+  );
+  // 抓取发布后的商品ID（用于后续配置自动发货规则）
+  const itemId = (page.url().match(/item\?id=(\d+)/) || [])[1] || '';
+  if (published && itemId) {
+    log('ok', `商品ID: ${itemId}`);
+    // 回填到 listings.json，供发货规则使用
+    try {
+      const backFile = process.env.PUBLISH_BACK_FILE || path.join(DATA, 'listings.json');
+      const all = readJSON(backFile, []);
+      const hit = all.find((x) => x.slug === item.slug);
+      if (hit && !hit.itemId) {
+        hit.itemId = itemId;
+        hit.itemUrl = `https://www.goofish.com/item?id=${itemId}`;
+        hit.publishedAt = new Date().toISOString();
+        writeJSON(backFile, all);
+        log('ok', `已回填 itemId 到 ${path.basename(backFile)}`);
+      }
+    } catch (e) {
+      log('warn', '回填 itemId 失败: ' + e.message.split('\n')[0].slice(0, 60));
+    }
+  }
+  return { ok: published, url: page.url(), itemId };
 }
 
 async function main() {
@@ -269,20 +376,29 @@ async function main() {
   const slugIdx = args.indexOf('--slug');
   const only = slugIdx >= 0 ? args[slugIdx + 1] : null;
 
-  const listings = readJSON(LIST_FILE, []);
+  // --file <path>：从指定文件读待发布清单（不污染主 listings.json）
+  const fileIdx = args.indexOf('--file');
+  const listFile = fileIdx >= 0 ? path.resolve(args[fileIdx + 1]) : LIST_FILE;
+  const listings = readJSON(listFile, []);
   if (!listings.length) {
     console.error('listings.json 为空，先跑 build_listings.js');
     process.exit(1);
   }
-  const targets = only ? listings.filter((l) => l.slug === only) : listings;
+  // 合规拦截：标题含禁用词 / 已标记不发的，一律不发布
+  const { filterPublishable, reportBlocked } = require('./compliance');
+  const { ok: targets, blocked } = filterPublishable(listings);
+  if (blocked.length) {
+    log('warn', `合规拦截 ${blocked.length} 个商品，不予发布:`);
+    console.log(reportBlocked(blocked));
+  }
   if (!targets.length) {
     console.error(`没有 slug=${only} 的商品`);
     process.exit(1);
   }
 
-  const throttle = makeThrottle(10000);
-  const ctx = await launch('fish', { headless: false });
-  const page = ctx.pages()[0] || (await ctx.newPage());
+  const throttle = makeThrottle(12000);
+  let ctx = await launch('fish', { headless: false });
+  let page = ctx.pages()[0] || (await ctx.newPage());
   await page.setViewportSize({ width: 1500, height: 1000 });
 
   const results = [];
@@ -292,8 +408,18 @@ async function main() {
       const r = await publishOne(page, item, { dryRun });
       results.push({ slug: item.slug, title: item.xyTitle, ...r });
     } catch (e) {
-      log('err', `发布 ${item.slug} 异常: ${e.message.split('\n')[0]}`);
-      results.push({ slug: item.slug, ok: false, reason: e.message.split('\n')[0] });
+      const msg = e.message.split('\n')[0];
+      log('err', `发布 ${item.slug} 异常: ${msg}`);
+      results.push({ slug: item.slug, ok: false, reason: msg });
+      // 浏览器被关闭/上下文销毁 -> 重建后继续
+      if (/Target page, context or browser has been closed|browser has been closed|Connection closed/i.test(msg)) {
+        log('warn', '浏览器已关闭，重建上下文后继续...');
+        try { await ctx.close(); } catch { /* ignore */ }
+        ctx = await launch('fish', { headless: false });
+        page = ctx.pages()[0] || (await ctx.newPage());
+        await page.setViewportSize({ width: 1500, height: 1000 });
+        await sleep(3000);
+      }
     }
   }
 

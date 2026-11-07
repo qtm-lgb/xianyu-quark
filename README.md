@@ -355,3 +355,23 @@ node tools/yd_reply_pending.js        # 补发历史未回复咨询
 
 **建议以 Ydisks 为主**（监听与发货），自建脚本作为补充
 （`src/` 负责采集货源与上架）。
+
+---
+
+# 附：夸克课程批量上架（37 门）
+
+把夸克网盘共享目录里的每个文件夹变成闲鱼商品的完整流水线，
+详见 **[docs/quark-pipeline.md](docs/quark-pipeline.md)**。
+
+```bash
+node tools/quark_login.js              # 扫码登录夸克
+node tools/quark_compliance.js         # 看合规分级，确认要上哪些
+node tools/quark_create_share.js --batch   # 建永久分享
+node tools/quark_build_listings.js     # 生成文案与主图
+node src/publish_xianyu.js             # 上架（自动回填 itemId）
+node tools/yd_after_publish.js         # 等上架完自动配发货规则+客服
+```
+
+**合规是硬门槛**：课程里混有盗版付费课、破解软件、暴力破解工具、伪造印章，
+`quark_compliance.js` 会分 safe / gray / blocked 三级，默认只上 safe。
+上架前务必人工过一遍分级清单。

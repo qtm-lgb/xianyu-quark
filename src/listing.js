@@ -23,7 +23,42 @@ const BANNED = [
   ['全套正版', '全套整理'], ['高清无水印', '高清整理'], ['免费送', '资料合集'],
 ];
 
-/** 清洗标题：去违禁词、去多余符号、去重复空白 */
+/**
+ * 高危词黑名单 —— 平台实测会判违规并删除商品
+ *
+ * 实测处罚记录（2026-11-07）：
+ *   · 「最全Codex入门教程」-> 违规编号 197285535124，商品被删
+ *     （原因含绝对化用语「最全」，广告法第九条）
+ *   · 「Ai换脸免费模板」-> 被处罚
+ *     （AI 换脸涉及深度伪造肖像，平台重点管控）
+ *
+ * 这类词一律不出现在标题里，宁可换词也不能冒被删的风险。
+ */
+const HIGH_RISK = [
+  [/换脸/g, '形象素材'], [/AI换脸/g, 'AI形象素材'], [/深度伪造/g, '形象创作'],
+  [/破解/g, '技术研究'], [/破解版/g, '技术研究版'], [/激活/g, '部署'],
+  [/解锁/g, '免安装版'], [/会员版/g, '个人版'], [/破解工具/g, '技术工具'],
+  [/暴力/g, '安全研究'], [/实名释放/g, '账号研究'],
+  [/违规敏感词/g, '平台规则'], [/敏感词/g, '违禁词'],
+  [/印章/g, '印章制作'], [/电子Y章/g, '电子印章'],
+  [/盗版/g, '整理版'], [/磁力/g, '资源合集'], [/刷单/g, '运营合集'],
+  [/代练/g, '游戏攻略'], [/身份证/g, '证件模板'], [/银行卡/g, '支付教程'],
+];
+
+/**
+ * 绝对化用语（广告法第九条）
+ * 闲鱼实测会因此判违规并直接删除商品（2026-11-07「最全Codex入门教程」被删，
+ * 违规编号 197285535124）。发布前必须替换掉。
+ */
+const ABSOLUTE = [
+  [/最全/g, '合集'], [/最新/g, '近期'], [/最新/g, '近期'],
+  [/第一/g, '精选'], [/唯一/g, '少见'], [/100%/g, '全部'],
+  [/彻底/g, '完整'], [/顶级/g, '优质'], [/最强/g, '好用'],
+  [/最好/g, '好用'], [/最佳/g, '优质'], [/国家级/g, ''],
+  [/世界级/g, ''], [/全网最/g, '合集'], [/史上最/g, ''],
+];
+
+/** 清洗标题：去违禁词、去绝对化用语、去多余符号、去重复空白 */
 function cleanTitle(raw) {
   let t = String(raw || '').trim();
   // 去掉常见噪声
@@ -31,6 +66,14 @@ function cleanTitle(raw) {
   // 替换违禁词
   for (const [bad, good] of BANNED) {
     t = t.split(bad).join(good);
+  }
+  // 替换绝对化用语（广告法第九条，闲鱼会判违规删商品）
+  for (const [bad, good] of ABSOLUTE) {
+    t = t.replace(bad, good);
+  }
+  // 替换高危词（平台实测判违规删商品）
+  for (const [bad, good] of HIGH_RISK) {
+    t = t.replace(bad, good);
   }
   t = t.replace(/(整理版\s*){2,}/g, '整理版').replace(/\s{2,}/g, ' ').trim();
   return t;
@@ -42,7 +85,20 @@ function buildTitle(rawTitle, { category = '学习资料' } = {}) {
   if (!core) core = category;
   // 控制在 30 字内，保留后缀
   const suffix = ' 个人整理版';
-  if (core.length + suffix.length > 30) core = core.slice(0, 30 - suffix.length);
+  const max = 30 - suffix.length;
+  if (core.length > max) {
+    // 在空格/标点处断，避免把词或数字切碎（"108集视频" 不能切成 "10"）
+    let cut = core.slice(0, max);
+    const brk = Math.max(
+      cut.lastIndexOf(' '),
+      cut.lastIndexOf(','),
+      cut.lastIndexOf('，'),
+      cut.lastIndexOf('、'),
+      cut.lastIndexOf('/')
+    );
+    if (brk >= Math.floor(max * 0.6)) cut = cut.slice(0, brk);
+    core = cut.trim();
+  }
   return core + suffix;
 }
 
@@ -88,21 +144,52 @@ function buildCoverSVG({ title, subtitle, badges = [], fileCount }) {
   const esc = (s) => String(s || '').replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));
   const t = esc(title).trim();
 
-  // 按行宽切分
+  // 按行宽切分。
+  // 要点：
+  //   1) 优先在空格/标点处断行，避免把英文单词切碎（"Shorts" 不能断成 "S"+"horts"）
+  //   2) 最多 4 行；超出部分缩略成省略号，不能直接丢弃（丢了信息，主图就与标题不符）
   const MAX_PER_LINE = 12;
+  const MAX_LINES = 4;
   const lines = [];
   let cur = '';
-  for (const ch of t) {
-    cur += ch;
-    if (cur.length >= MAX_PER_LINE) { lines.push(cur); cur = ''; }
+  for (const token of t.split(/(\s+)/)) {
+    if (!token) continue;
+    if (/^\s+$/.test(token)) {
+      // 空白：若当前行为空则丢弃，否则保留为分隔
+      if (cur) cur += ' ';
+      continue;
+    }
+    if (cur.length + token.length <= MAX_PER_LINE) {
+      cur += token;
+      continue;
+    }
+    // 放不下：先收尾当前行，再处理 token
+    if (cur.trim()) lines.push(cur.trim());
+    // token 自己就超长（如超长英文串），按字符硬切
+    if (token.length > MAX_PER_LINE) {
+      let rest = token;
+      while (rest.length > MAX_PER_LINE) {
+        lines.push(rest.slice(0, MAX_PER_LINE));
+        rest = rest.slice(MAX_PER_LINE);
+      }
+      cur = rest;
+    } else {
+      cur = token;
+    }
   }
-  if (cur) lines.push(cur);
-  const shown = lines.slice(0, 3);
+  if (cur.trim()) lines.push(cur.trim());
+
+  // 超过 4 行则截断并加省略号
+  let shown = lines.slice(0, MAX_LINES);
+  if (lines.length > MAX_LINES) {
+    shown = shown.slice(0, MAX_LINES);
+    shown[MAX_LINES - 1] = shown[MAX_LINES - 1].slice(0, MAX_PER_LINE - 1) + '…';
+  }
 
   // 标题字号随行数自适应，单行大字号、多行小字号
-  const fontSize = shown.length === 1 ? 92 : shown.length === 2 ? 72 : 58;
+  const fontSize = shown.length === 1 ? 92 : shown.length === 2 ? 72 : shown.length === 3 ? 58 : 48;
   const lineH = fontSize * 1.28;
-  const titleTop = 330;                       // 标题区顶部（避开上方标签）
+  const titleTop = 300;                       // 标题区顶部（避开上方标签）
   const titleBaseline0 = titleTop + fontSize; // 第一行基线
   const titleBottom = titleBaseline0 + (shown.length - 1) * lineH;
 
@@ -221,6 +308,8 @@ function buildListings(resources, opts = {}) {
 }
 
 module.exports = {
+  HIGH_RISK,
+  ABSOLUTE,
   cleanTitle, buildTitle, buildDescription, buildDeliveryText,
   buildCoverSVG, renderCovers, buildListings, BANNED,
 };

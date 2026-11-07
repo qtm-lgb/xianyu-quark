@@ -22,6 +22,12 @@ shots/
 data/resources.json
 data/listings.json
 data/selftest_*.json
+data/quark_courses.json
+data/quark_raw.json
+data/listings_pending.json
+data/listings_pending2.json
+data/listings_to_publish.json
+data/one_test.json
 data/x_queryid.txt
 data/*.log
 data/login_*.log
