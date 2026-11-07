@@ -63,7 +63,7 @@ async function api(session, method, endpoint, body) {
     if (!chk.json?.authenticated) {
       say('  ✗ session 失效');
     } else {
-      const rulesRes = await api(session, 'GET', `/automation-rules?page=1&pageSize=200`);
+      const rulesRes = await api(session, 'GET', `/automation-rules?page=1&page_size=200`);
       const rules = rulesRes.json?.data || [];
       const onRules = rules.filter((r) => r.enabled && r.trigger_type === 'order_paid');
       const covered = new Set(onRules.map((r) => String(r.item_id)));

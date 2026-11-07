@@ -28,6 +28,10 @@ data/listings_pending.json
 data/listings_pending2.json
 data/listings_to_publish.json
 data/one_test.json
+data/listings_pub.json
+data/items_to_import.json
+data/rename_map.json
+data/rename_map2.json
 data/x_queryid.txt
 data/*.log
 data/login_*.log

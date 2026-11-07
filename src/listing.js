@@ -61,6 +61,8 @@ const ABSOLUTE = [
 /** 清洗标题：去违禁词、去绝对化用语、去多余符号、去重复空白 */
 function cleanTitle(raw) {
   let t = String(raw || '').trim();
+  // 去掉 emoji（闲鱼标题带 emoji 容易触发异常，且部分买家看不到）
+  t = t.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').replace(/\s{2,}/g, ' ').trim();
   // 去掉常见噪声
   t = t.replace(/[【】\[\]（）()《》<>]/g, ' ').replace(/\s+/g, ' ').trim();
   // 替换违禁词

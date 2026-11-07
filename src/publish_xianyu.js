@@ -209,33 +209,54 @@ async function selectCategory(page, name = '电子资料') {
 
   // 已选中目标分类就不用动
   const current = ((await sel.textContent().catch(() => '')) || '').trim();
-  if (current.includes(name)) {
-    log('ok', `分类已是「${name}」`);
+  // 预选值只有在「网页版支持的分类」里才算数；
+  // AI 工具类分类（AI视频工具/服务 等）网页版会拦截发布，必须换掉
+  const WEB_OK = [
+    '电子资料', '其他技能培训', '创业/副业培训', '互联网产品与运营技能培训',
+    '原画/游戏动画培训', '写作指导', '其他技能服务', '学习资料定制', '笔记资料',
+  ];
+  if (current && !/请选择/.test(current) && WEB_OK.includes(current)) {
+    log('ok', `分类已预选「${current}」`);
     return true;
   }
 
   await sel.click({ force: true }).catch(() => {});
   await sleep(1800);
 
-  const opt = page.locator(`.ant-select-item-option[title="${name}"], [role="option"]:has-text("${name}")`).first();
-  if ((await opt.count().catch(() => 0)) === 0) {
-    const all = await page.evaluate(() =>
-      [...document.querySelectorAll('.ant-select-item-option, [role="option"]')]
-        .map((el) => (el.innerText || '').trim())
-        .filter(Boolean)
-    );
-    log('warn', `分类候选无「${name}」（闲鱼按标题推荐，可能只能 APP 发布）: ${all.slice(0, 6).join('/')}`);
+  // 展开后拿到全部候选
+  const all = await page.evaluate(() =>
+    [...document.querySelectorAll('.ant-select-item-option, [role="option"]')]
+      .map((el) => (el.innerText || '').trim())
+      .filter(Boolean)
+  );
+
+  // 选择优先级：先「电子资料」，没有就用课程/培训类替代
+  // （闲鱼按标题语义推荐分类，AI 类标题只会给出 AI 工具分类，
+  //   而那些分类网页版不支持发布，必须退到课程培训类）
+  const COURSE_PREFERENCE = [
+    '电子资料',
+    '其他技能培训', '创业/副业培训', '互联网产品与运营技能培训',
+    '原画/游戏动画培训', '写作指导', '其他技能服务', '学习资料定制', '笔记资料',
+  ];
+  let chosen = null;
+  for (const pref of COURSE_PREFERENCE) {
+    if (all.includes(pref)) { chosen = pref; break; }
+  }
+  if (!chosen) {
+    log('warn', `分类候选里没有可用的课程类分类: ${all.slice(0, 6).join('/')}`);
     await page.keyboard.press('Escape').catch(() => {});
     await sleep(600);
     return false;
   }
+
+  const opt = page.locator(`.ant-select-item-option[title="${chosen}"], [role="option"]:has-text("${chosen}")`).first();
   await opt.click({ force: true }).catch(() => {});
   await sleep(1200);
 
   // 校验：重新读回该 select 的值
   const picked = ((await sel.textContent().catch(() => '')) || '').trim();
-  const ok = picked.includes(name);
-  log(ok ? 'ok' : 'warn', ok ? `分类已选「${name}」` : `分类选择未确认（当前=${picked}）`);
+  const ok = picked.includes(chosen);
+  log(ok ? 'ok' : 'warn', ok ? `分类已选「${chosen}」` : `分类选择未确认（当前=${picked}）`);
   return ok;
 }
 

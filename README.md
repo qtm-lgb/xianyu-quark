@@ -375,3 +375,47 @@ node tools/yd_after_publish.js         # 等上架完自动配发货规则+客�
 **合规是硬门槛**：课程里混有盗版付费课、破解软件、暴力破解工具、伪造印章，
 `quark_compliance.js` 会分 safe / gray / blocked 三级，默认只上 safe。
 上架前务必人工过一遍分级清单。
+
+---
+
+# 附：合规红线（必读）
+
+平台**不通知**就删商品。本项目已把实战处罚规则固化成代码防线，
+详见 **[docs/compliance-rules.md](docs/compliance-rules.md)**。
+
+## 已发生的真实处罚（2026-11-07）
+
+| 商品 | 处罚 | 原因 |
+|---|---|---|
+| 最全Codex入门教程 | 违规编号 197285535124，**商品被删** | 标题含绝对化用语「最全」（广告法第九条） |
+| Ai换脸免费模板 | **被处罚** | AI 换脸属深度伪造，平台重点管控 |
+| 闲鱼虚拟商品违规敏感词清单 | **被处罚** | 标题含「敏感词」，易判规避审核类 |
+
+## 三道防线
+
+```
+src/listing.js      HIGH_RISK / ABSOLUTE 词表，标题生成即清洗
+src/compliance.js   FORBIDDEN 清单 + checkListing()，发布前拦截
+所有发布入口        publish_xianyu.js / yd_publish_items.js / yd_setup_courses.js
+```
+
+被处罚的商品在 `data/listings.json` 里标 `penalized: true` + `skipPublish: true`，
+**既不上架，也不配自动发货规则**。
+
+## 发布前自检
+
+```bash
+node tools/final_report.js       # 端到端验收
+node tools/list_my_items.js      # 我的在售商品 + 风险词标记
+node tools/check_titles.js       # 只查标题合规
+```
+
+## 记住这几条
+
+1. 标题别用绝对化用语：最全 / 最新 / 第一 / 唯一 / 100% / 彻底 / 顶级
+2. 标题别用平台管控词：换脸 / 破解 / 激活 / 解锁 / 敏感词 / 印章 / 暴力破解
+3. 标题去掉 emoji（🔥 等）
+4. 标题 ≤ 30 字，断词处别把数字切碎
+5. 网页版发布只有「电子资料」「其他技能培训」这类分类能用，
+   AI 工具类分类只能 APP 发
+6. **下架/删除商品网页版没有入口，只能在闲鱼 APP 操作**

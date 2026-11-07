@@ -71,7 +71,7 @@ function cardContent(l) {
   if (!listings.length) { say('没有已上架商品，先跑 src/publish_xianyu.js'); process.exit(1); }
 
   // 现状
-  const rulesRes = await api(sid, 'GET', `/automation-rules?page=1&pageSize=100`);
+  const rulesRes = await api(sid, 'GET', `/automation-rules?page=1&page_size=100`);
   const existingRules = rulesRes.json?.data || [];
   const cardsRes = await api(sid, 'GET', '/cards');
   const existingCards = cardsRes.json || [];
@@ -129,7 +129,7 @@ function cardContent(l) {
       cookie_id: ACCOUNT,
       item_id: l.itemId,
       item_title: l.xyTitle,
-      name: `付款后自动发货 - ${l.title.slice(0, 20)}`,
+      name: `付款后自动发货 - ${String(l.title || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').trim().slice(0, 20)}`,
       trigger_type: 'order_paid',
       enabled: true,
       priority: 100,
