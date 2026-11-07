@@ -177,3 +177,45 @@ C:\ProgramData\YdisksXianyuHelper\data\xianyu_data.db # SQLite（47 张表）
 - **助手是闭源软件**，本仓库只记录其 API 用法与表结构，不含其源码。
 - **若将来升级 Ydisks 版本**，表结构可能变化，届时用
   `PRAGMA table_info(表名)` 重新确认字段。
+
+---
+
+## 八、主动赠送链接（运营动作）
+
+```bash
+node tools/yd_send_free.js --dry-run   # 先看名单与话术
+node tools/yd_send_free.js             # 实际发送
+```
+
+会找出所有咨询过指定商品（`ITEM` 常量）的买家并发送含网盘链接的话术，
+包括已下单后退款的买家（可按运营策略在 `yd_send_free.js` 里排除）。
+
+### 送链接前必须核实的两件事
+
+1. **链接是否会被第一个人转存后抢光**
+   夸克分享默认可能开启「1 人转存即失效」。检查方法：分享页的
+   `window.globalConfig.share_config` 里若没有 `saveLimit` 之类配置，
+   说明未开启该限制，同一链接可多人使用。
+   本项目的链接 `pan.quark.cn/s/3f05be5e6c5c` 已核实**无此限制**。
+
+2. **话术里的数据必须实测**
+   不要凭商品标题编内容。用分享页顶部统计取真实数字：
+   `共 321 个文件 134.2M 永久有效`，顶层目录名与子项数也从这里读。
+   内部子目录需在夸克 App 内展开才可见，网页端 API 拿不到
+   （`sharepage/detail` 只返回顶层），因此话术里不要写具体分类名。
+
+### 发送接口注意
+
+`POST /api/v1/chat/messages` 的 body 用 **`text`** 字段，不是 `content`：
+
+```json
+{
+  "account_id": "2419336374",
+  "chat_id": "68775449901",
+  "buyer_id": "51687404",
+  "buyer_name": "轻松印记",
+  "item_id": "1094008366209",
+  "item_title": "姜胡说合集 个人整理版",
+  "text": "..."
+}
+```
