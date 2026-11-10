@@ -198,7 +198,11 @@ async function main() {
     say(`  自动评价    : ${d ? d.auto_confirm : '?'}`);
     say(`  自动擦亮    : ${d ? d.auto_polish_enabled : '?'}`);
     say('');
-    say('  密码续期通路: ' + (d && d.username ? '✓ 已具备（密码登录兜底可用）' : '✗ 未启用（只能靠扫码）'));
+    say('  密码登录接口  : ✗ 本版 Go 客户端已禁用（password_login_disabled）');
+    say('  免扫码续期通路: 仅「Go 协议续期」一条，失败则需人工扫码');
+    if (d && d.username) {
+      say(`  已存账号      : ${d.username}（密码已加密入库，作为扫码备用）`);
+    }
     return;
   }
 
@@ -277,7 +281,8 @@ async function main() {
   say('════════ 配置结果 ════════');
   say(`  登录方式: ${d.login_method}`);
   say(`  用户名  : ${d.username || '(未写入)'}`);
-  say(`  密码通路: ${d.username ? '✓ 已具备' : '✗ 未生效'}`);
+  say(`  账号已保存  : ${d.username ? '✓ ' + d.username : '✗ 未生效'}`);
+  say('  提醒        : 本版密码登录接口被禁用，扫码仍是最终兜底');
 
   if (d.login_method !== 'qr_scan' || d.username) {
     say('');

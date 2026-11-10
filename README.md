@@ -440,15 +440,21 @@ node tools/yd_setup_alert.js --list  # 告警渠道
 | 授权 | 过期影响 | 解法 |
 |---|---|---|
 | 控制台会话（24h 硬过期） | 只影响面板访问 | `yd_keepalive.js` 自动续 |
-| **闲鱼账号 Cookie** | **业务停摆** | **填账号密码，开通第二条续期通路** |
+| **闲鱼账号 Cookie** | **业务停摆** | 修滑块风控 + 让长登录真正生效 + 主动告警 |
 
-**当前根因**：账号是 `qr_scan` 且 `username/password` 为空，
-只有 sdkSilent 静默续期一条路，而它已被闲鱼「疲劳窗口」连续跳过 8 次
-（近 30 天还有 18 次滑块风控全败）。所以只能人工扫码。
+**当前根因**：滑块风控 30 次全败打挂了静默续期，
+而 sdkSilent 静默续期又被闲鱼「疲劳窗口」连续跳过 8 次。
 
-**填上账号密码**即可多一条不受疲劳限制的通路：
+**扫码省不掉** —— 实测 `POST /api/v1/password-login` 一律返回
+`password_login_disabled`（本版 Go 客户端禁用了密码登录）。
+免扫码只剩「Go 协议续期」一条，它失败时兜底仍是扫码。
+
+**所以要做的是**：
+① 修滑块识别（有头模式 / 代理）② 让长登录真正生效（面板里关掉再打开）
+③ 配主动告警，把扫码时机从「买家投诉后」提前到「掉线时」
+
 ```bash
-node tools/yd_setup_password.js --username <闲鱼账号> --password <密码>
+node tools/yd_setup_alert.js --wechat "<企业微信 webhook>"
 ```
 
 ---

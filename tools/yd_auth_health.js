@@ -193,7 +193,8 @@ function buildReport(d) {
       if (r.status === 'skipped' && /疲劳/.test(r.message || '')) skipFatigue++;
     }
     if (skipFatigue >= renew.length) {
-      issues.push(`连续 ${skipFatigue} 次续期被「疲劳窗口」跳过 —— 静默续期已失效，需要账号密码自动登录兜底`);
+      issues.push(`连续 ${skipFatigue} 次续期被「疲劳窗口」跳过 —— 静默续期(sdkSilent)已失效；` +
+        `免扫码兜底只有「Go 协议续期」一条，它失败就只能人工扫码`);
     }
   } else {
     lines.push('  (无记录)');
@@ -217,8 +218,13 @@ function buildReport(d) {
   const a = d.db.acct;
   if (a) {
     lines.push(`  方式=${a.login_method}  账号=${a.username || '(未填写)'}`);
-    if (a.login_method === 'qr_scan' && !a.username) {
-      issues.push('未配置账号密码 —— 只能靠人工扫码，助手无自动恢复能力');
+    // 实测（2026-11-10）：POST /api/v1/password-login 对任何参数组合都返回
+    //   password_login_disabled「Go 客户端仅支持扫码登录，密码登录已禁用」
+    //   => 填账号密码**不能**开通第二条续期通路，别指望它。
+    if (a.username) {
+      lines.push('    注：已填账号密码，但本版 Go 客户端禁用了密码登录接口');
+      lines.push('        （POST /api/v1/password-login -> password_login_disabled）');
+      lines.push('        免扫码续期只能靠「Go 协议续期」，扫码仍是最终兜底');
     }
   }
 
