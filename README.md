@@ -419,3 +419,34 @@ node tools/check_titles.js       # 只查标题合规
 5. 网页版发布只有「电子资料」「其他技能培训」这类分类能用，
    AI 工具类分类只能 APP 发
 6. **下架/删除商品网页版没有入口，只能在闲鱼 APP 操作**
+
+---
+
+# 附：Ydisks 授权过期治理
+
+「ydisk 总是授权过期」其实是两件事，只有一件影响业务。
+完整诊断见 **[docs/ydisks-auth-guide.md](docs/ydisks-auth-guide.md)**。
+
+```bash
+node tools/yd_auth_health.js        # 授权体检（先跑这个看现状）
+node tools/yd_keepalive.js --status  # 控制台会话状态
+node tools/yd_keepalive.js --once    # 自动续会话（需配管理员密码）
+node tools/yd_setup_password.js --status  # 账号密码通路状态
+node tools/yd_setup_alert.js --list  # 告警渠道
+```
+
+## 一句话结论
+
+| 授权 | 过期影响 | 解法 |
+|---|---|---|
+| 控制台会话（24h 硬过期） | 只影响面板访问 | `yd_keepalive.js` 自动续 |
+| **闲鱼账号 Cookie** | **业务停摆** | **填账号密码，开通第二条续期通路** |
+
+**当前根因**：账号是 `qr_scan` 且 `username/password` 为空，
+只有 sdkSilent 静默续期一条路，而它已被闲鱼「疲劳窗口」连续跳过 8 次
+（近 30 天还有 18 次滑块风控全败）。所以只能人工扫码。
+
+**填上账号密码**即可多一条不受疲劳限制的通路：
+```bash
+node tools/yd_setup_password.js --username <闲鱼账号> --password <密码>
+```
