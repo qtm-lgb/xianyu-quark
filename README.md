@@ -450,3 +450,29 @@ node tools/yd_setup_alert.js --list  # 告警渠道
 ```bash
 node tools/yd_setup_password.js --username <闲鱼账号> --password <密码>
 ```
+
+---
+
+# 附：告警渠道配置（主动推送）
+
+授权过期、账号掉线时主动推消息给你，不等买家投诉。
+详见 **[docs/alert-channel-guide.md](docs/alert-channel-guide.md)**。
+
+```bash
+cd /c/Users/mailw/WorkBuddy/2026-10-26-11-39-15/xianyu-quark
+
+# 企业微信群机器人（最简单）
+node tools/yd_setup_alert.js --wechat "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=你的key"
+
+# 飞书
+node tools/yd_setup_alert.js --feishu "<webhook>" --secret "sec-xxx"
+
+# 钉钉
+node tools/yd_setup_alert.js --dingtalk "<webhook>" --secret "SECxxx"
+
+node tools/yd_setup_alert.js --guide    # 各平台获取 webhook 的步骤
+```
+
+**注意**：飞书/钉钉/企微在凭据无效时也返回 HTTP 200，真正的错误在 body 里
+（飞书 `code:19001`、企微 `errcode:93000`）。脚本会校验业务码，
+不通就中止，不会创建无效渠道。

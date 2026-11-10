@@ -224,21 +224,27 @@ node tools/yd_auth_health.js    # 看「⑤ 登录方式」是否变成已配置
 之前 11-05 有买家下单没人发货、11-07 有 3 个商品被判违规，
 两次都是「等买家反馈」才发现的被动局面。
 
+**在项目目录下执行**：
+
 ```bash
-# 飞书机器人（推荐）
-node tools/yd_setup_alert.js --feishu https://open.feishu.cn/open-apis/bot/v2/hook/xxxxx
+# 企业微信群机器人（最简单，不用 secret）
+node tools/yd_setup_alert.js --wechat "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=你的真实key"
+
+# 飞书机器人（带签名校验）
+node tools/yd_setup_alert.js --feishu "https://open.feishu.cn/open-apis/bot/v2/hook/你的真实token" --secret "sec-xxx"
 
 # 钉钉机器人
-node tools/yd_setup_alert.js --dingtalk https://oapi.dingtalk.com/robot/send?access_token=xxx
+node tools/yd_setup_alert.js --dingtalk "https://oapi.dingtalk.com/robot/send?access_token=xxx" --secret "SECxxx"
 
 # Bark（iOS）
-node tools/yd_setup_alert.js --bark https://api.day.app/你的key
+node tools/yd_setup_alert.js --bark "https://api.day.app/你的key"
 
 node tools/yd_setup_alert.js --list     # 查看现有渠道
-node tools/yd_setup_alert.js --unbind   # 解绑
+node tools/yd_setup_alert.js --guide    # 各平台获取 webhook 的步骤
 ```
 
 脚本会先测 webhook 通不通再建渠道，然后绑到账号并发测试消息。
+**获取 webhook 的详细步骤见 [alert-channel-guide.md](alert-channel-guide.md)**。
 
 ---
 
