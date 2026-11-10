@@ -111,16 +111,27 @@ cookies 表: id=2419336374  username=''  password=''  login_method='qr_scan'
 **证据 3 —— 官方留了后门但没启用**。二进制符号表里：
 
 ```
-xianyu-go/internal/xianyu/renew.Service.callAutoLogin
-xianyu-go/internal/xianyu/renew.autoLoginModeWithoutFatigue   ← 无疲劳的自动登录模式
-xianyu-go/internal/xianyu/renew.Service.renewAPIFirst
+xianyu-go/internal/xianyu/renew.Service.RenewAPIFirst   ← 续期公开入口
+xianyu-go/internal/xianyu/renew.Service.renewAPIFirst   ← 内部实现
+  ├─ renewAPIFirst.func1 → renew.autoLoginMode              (常规模式，受疲劳限制)
+  └─ renewAPIFirst.func2 → renew.autoLoginModeWithoutFatigue (无疲劳模式，兜底)
+renew.Result{ authoritative }  /  (*Result).AwaitPending
+renew.Service.callAutoLogin
 internal/.../passwordLoginByCookie
 internal/.../passwordRenewalResult
 ```
 
+这是**两级续期架构**：先试常规模式（sdkSilent 静默续期），失败/被拦截就切
+无疲劳模式。`authoritative` 字段标记哪次结果算数，`AwaitPending` 处理异步结果。
+
 `autoLoginModeWithoutFatigue` 这个名字直接说明：**填了账号密码，续期才会走
 不受疲劳窗口限制的通路**。而日志里 `password_login` 相关记录是**零** ——
 这条通路从未启用过。
+
+> 补充：`fatigue` 在二进制里只出现一次，是**闲鱼响应头的 key**
+> （服务端返回该头 = 告诉你「请求过频」），不是本地计时器。
+> 所以疲劳窗口的判定权在闲鱼服务器，**本地改不了，只能绕开**——
+> 绕开的方式就是启用不走 sdkSilent 的路径。
 
 ### 处置：开通密码续期通路
 
