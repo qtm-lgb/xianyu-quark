@@ -23,10 +23,13 @@
  *
  * 用法
  * ----
- *   node tools/yd_setup_password.js --username <闲鱼账号> --password <密码>
- *   node tools/yd_setup_password.js --status        # 看当前配置状态
- *   node tools/yd_setup_password.js --clear         # 清除密码（退回扫码）
- *   node tools/yd_setup_password.js --from-file     # 从 ~/.workbuddy/yd_xianyu_pwd.txt 读
+ *   node tools/yd_setup_password.js                       # ★ 交互模式（推荐，密码不回显）
+ *   node tools/yd_setup_password.js --username <账号> --password <密码>
+ *   node tools/yd_setup_password.js --from-file           # 从 ~/.workbuddy/yd_xianyu_pwd.txt 读
+ *   node tools/yd_setup_password.js --status              # 看当前配置状态
+ *   node tools/yd_setup_password.js --clear               # 清除密码（退回扫码）
+ *
+ * 交互模式最安全：密码不回显，也不会进 shell 历史。
  *
  * 注意：密码由 Ydisks 服务端用 AES 加密后存库（data-key 文件），明文不落盘。
  */
@@ -35,6 +38,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const readline = require('readline');
 
 const API = 'http://127.0.0.1:59188/api/v1';
 const CID = '2419336374';
@@ -72,6 +76,105 @@ function token() {
   try { return fs.readFileSync(CACHE, 'utf8').trim(); } catch { return null; }
 }
 
+/**
+ * 取一个可用的 session。
+ * 缓存过期时自动从数据库取最新的有效 session 顶上
+ * （数据库里始终有——会话是用户登录面板时生成的）
+ */
+async function liveToken() {
+  let t = token();
+  if (t) {
+    const r = await api('GET', '/session', { token: t }).catch(() => null);
+    if (r && r.json && r.json.authenticated === true) return t;
+  }
+  // 缓存失效 -> 从数据库同步
+  try {
+    const { execFileSync } = require('child_process');
+    const DB = 'C:/ProgramData/YdisksXianyuHelper/data/xianyu_data.db';
+    const tmp = path.join(os.tmpdir(), `yd_pwd_${process.pid}.db`);
+    for (const suffix of ['', '-wal', '-shm']) {
+      const src = DB + suffix; const dst = tmp + suffix;
+      if (!fs.existsSync(src)) continue;
+      const s = src.replace(/\//g, '\\'); const d = dst.replace(/\//g, '\\');
+      try {
+        execFileSync('powershell', ['-NoProfile', '-Command',
+          `$fs=[IO.File]::Open('${s}',[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete);` +
+          `$o=[IO.File]::Create('${d}');$fs.CopyTo($o);$o.Close();$fs.Close();`], { stdio: 'ignore' });
+      } catch { /* ignore */ }
+      if (!fs.existsSync(dst)) { try { fs.copyFileSync(src, dst); } catch { /* ignore */ } }
+    }
+    const out = execFileSync('python', ['-c',
+      `import sqlite3,sys,time,json
+c=sqlite3.connect(sys.argv[1])
+r=c.execute("SELECT session_id FROM sessions WHERE expires_at > ? ORDER BY expires_at DESC LIMIT 1",(time.time(),)).fetchone()
+print(r[0] if r else "")`, tmp], { encoding: 'utf8' }).trim();
+    for (const s of ['', '-wal', '-shm']) { try { fs.unlinkSync(tmp + s); } catch { /* ignore */ } }
+    if (out) {
+      fs.mkdirSync(path.dirname(CACHE), { recursive: true });
+      fs.writeFileSync(CACHE, out, 'utf8');
+      return out;
+    }
+  } catch { /* ignore */ }
+  return t;
+}
+
+/**
+ * 交互式输入密码（不回显）
+ *
+ * 关键：必须用 raw mode 关闭终端回显，否则密码会明文打出来。
+ * 不能靠 readline 的 question() —— 它一定回显。
+ */
+function askHidden(question) {
+  return new Promise((resolve) => {
+    const stdin = process.stdin;
+    const stdout = process.stdout;
+
+    stdout.write(question);
+
+    if (!stdin.isTTY) {
+      // 非交互终端（管道/重定向）：只能按行读，无法屏蔽回显
+      const rl = readline.createInterface({ input: stdin, output: stdout });
+      rl.question('', (a) => { rl.close(); stdout.write('\n'); resolve(a.trim()); });
+      return;
+    }
+
+    try { stdin.setRawMode(true); } catch { /* 某些环境不支持 */ }
+    stdin.resume();
+    if (typeof stdin.setEncoding === 'function') stdin.setEncoding('utf8');
+
+    let buf = '';
+    const cleanup = () => {
+      try { stdin.setRawMode(false); } catch { /* ignore */ }
+      try { stdin.pause(); } catch { /* ignore */ }
+      stdin.removeListener('data', onData);
+      stdout.write('\n');
+    };
+
+    const onData = (key) => {
+      // Ctrl+C
+      if (key === '\u0003') { cleanup(); process.exit(130); }
+      // 回车
+      if (key === '\r' || key === '\n') { cleanup(); resolve(buf); return; }
+      // 退格（DEL=0x7f，BS=0x08，有些终端发 0x08）
+      const code = key.charCodeAt(0);
+      if (code === 127 || code === 8) { buf = buf.slice(0, -1); return; }
+      // 忽略其余控制字符
+      if (code < 32) return;
+      buf += key;
+    };
+
+    stdin.on('data', onData);
+  });
+}
+
+/** 交互式输入普通文本 */
+function ask(question) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(question, (a) => { rl.close(); resolve(a.trim()); });
+  });
+}
+
 async function getDetails(t) {
   const r = await api('GET', '/accounts/details', { token: t });
   const list = Array.isArray(r.json) ? r.json : (r.json && r.json.data) || [];
@@ -82,7 +185,7 @@ async function main() {
   const args = process.argv.slice(2);
   const getArg = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : null; };
 
-  const t = token();
+  const t = await liveToken();
   if (!t) { say('✗ 没有可用的控制台 session，先跑: node tools/yd_keepalive.js --status'); process.exit(1); }
 
   if (args.includes('--status')) {
@@ -126,16 +229,30 @@ async function main() {
     }
   }
 
+  // ★ 交互模式：没给参数就引导输入
   if (!username || !password) {
-    say('用法:');
-    say('  node tools/yd_setup_password.js --username <闲鱼账号> --password <密码>');
-    say('  node tools/yd_setup_password.js --from-file   # 从 ' + XIAN_YU_PWD_FILE + ' 读');
-    say('  node tools/yd_setup_password.js --status');
-    say('  node tools/yd_setup_password.js --clear');
+    say('════════ 配置闲鱼账号密码登录 ════════');
     say('');
-    say('闲鱼账号 = 手机号或淘宝账号；密码 = 闲鱼/淘宝登录密码。');
-    say('密码只发给本机 127.0.0.1:59188 的 Ydisks 服务，由它 AES 加密后存库。');
-    process.exit(1);
+    say('这一步的作用：给助手开通「密码登录」续期通路。');
+    say('目前账号只有扫码登录一条路，闲鱼一旦触发「疲劳窗口」，');
+    say('就只能人工扫码 —— 填上密码后会多一条不受限制的备用路。');
+    say('');
+    const d = await getDetails(t);
+    if (d && d.nickname) say(`  当前账号: ${d.nickname} (${d.id})`);
+    say('');
+
+    username = await ask('  闲鱼账号（手机号或淘宝账号）: ');
+    if (!username) { say('✗ 未输入账号，已取消'); process.exit(1); }
+
+    password = await askHidden('  闲鱼密码: ');
+    if (!password) { say('✗ 未输入密码，已取消'); process.exit(1); }
+
+    say('');
+    say('  密码不会显示，也不会进 shell 历史。');
+    say(`  将通过本机 ${API} 发送给 Ydisks，由它 AES 加密后存库。`);
+    say('');
+    const confirm = await ask('  确认提交？(输入 y 确认): ');
+    if (!/^y(es)?$/i.test(confirm)) { say('已取消，未做任何修改'); process.exit(0); }
   }
 
   say(`→ 为账号 ${CID} 配置密码登录（${username}）`);
@@ -174,4 +291,10 @@ async function main() {
   }
 }
 
-main().catch((e) => { say('异常: ' + e.message); process.exit(1); });
+// 被 require 时不自动执行（供测试调用内部函数）
+if (require.main === module) {
+  main().catch((e) => { say('异常: ' + e.message); process.exit(1); });
+}
+
+// 导出供测试调用（不影响主流程）
+module.exports = { askHidden, ask, liveToken };

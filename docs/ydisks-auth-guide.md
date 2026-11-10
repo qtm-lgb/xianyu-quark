@@ -41,6 +41,8 @@ curl -b "session=$(cat ~/.workbuddy/yd_session.txt)" \
 
 ### 处置
 
+**在项目目录下执行**（`cd /c/Users/mailw/WorkBuddy/2026-10-26-11-39-15/xianyu-quark`）：
+
 ```bash
 node tools/yd_keepalive.js --status    # 看当前会话状态
 node tools/yd_keepalive.js --once     # 检查一次，必要时自动重新登录
@@ -135,27 +137,71 @@ internal/.../passwordRenewalResult
 
 ### 处置：开通密码续期通路
 
-```bash
-# 方式 A：命令行（密码只发给本机 127.0.0.1，不落盘）
-node tools/yd_setup_password.js --username <闲鱼账号> --password <密码>
+#### 在哪里执行
 
-# 方式 B：从文件读（省得密码进 shell 历史）
+**在 Git Bash（或任何终端）里，先 `cd` 到项目目录，再跑脚本：**
+
+```bash
+cd /c/Users/mailw/WorkBuddy/2026-10-26-11-39-15/xianyu-quark
+node tools/yd_setup_password.js
+```
+
+> Windows 资源管理器地址栏输入 `cmd` 或在 Git Bash 里都可以。
+> 完整 Windows 路径是 `C:\Users\mailw\WorkBuddy\2026-10-26-11-39-15\xianyu-quark`。
+> 脚本用相对路径定位自身，所以在项目目录下跑就行，不用管当前在哪。
+
+#### 怎么填
+
+**默认就是交互模式**，直接跑 `node tools/yd_setup_password.js` 即可：
+
+```
+════════ 配置闲鱼账号密码登录 ════════
+
+  当前账号: 爱看不看吧 (2419336374)
+
+  闲鱼账号（手机号或淘宝账号）: 13800138000
+  闲鱼密码: ★★★★★★★★        <- 输入时屏幕上什么都不显示，这是正常的
+  确认提交？(输入 y 确认): y
+```
+
+- **密码不回显** —— 用 `stdin.setRawMode(true)` 关掉了终端回显，
+  所以屏幕上不会有任何字符，也**不会进 shell 历史**。
+- 密码由 Ydisks 服务端用 AES 加密后存库（密钥在 `data-key`），**明文不落盘**。
+
+其他方式：
+
+```bash
+# 从文件读（适合脚本化）
 # ~/.workbuddy/yd_xianyu_pwd.txt  内容: {"username":"xxx","password":"yyy"}
 node tools/yd_setup_password.js --from-file
 
-# 查看状态
+# 直接传参（不推荐，密码会进 shell 历史）
+node tools/yd_setup_password.js --username <账号> --password <密码>
+
+# 查看当前状态
 node tools/yd_setup_password.js --status
 
-# 清除（退回扫码）
+# 清除密码（退回扫码）
 node tools/yd_setup_password.js --clear
 ```
 
+**也可以在图形面板里填**（效果等同）：
+账号列表 → 编辑 → 「登录信息」区域 → 「登录密码」（标注"用于自动登录"）→ 保存。
+
+#### 配完之后
+
+重启账号（面板点「重启账号」），助手就会用新凭据建立密码续期通路。
+然后验证：
+
+```bash
+node tools/yd_auth_health.js    # 看「⑤ 登录方式」是否变成已配置
+```
+
+> **为什么必须填密码**：账号现在只有「扫码登录」一条续期路，
+> 而这条路会被闲鱼的疲劳窗口拦住。填了密码才会多一条备用路。
+> 二进制里的 `renew.autoLoginModeWithoutFatigue`（无疲劳模式）就是这么设计的。
+
 闲鱼账号 = 手机号或淘宝账号；密码 = 闲鱼/淘宝登录密码。
-密码由 Ydisks 服务端用 AES 加密后存库（密钥在 `data-key`），**明文不落盘**。
-
-配好后重启账号（面板点「重启账号」），助手就会用新凭据建立密码续期通路。
-
-> 面板路径：账号列表 → 编辑 → 「登录信息」区域 → 「登录密码」→ 「用于自动登录」
 
 ---
 
